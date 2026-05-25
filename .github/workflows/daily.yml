@@ -1,0 +1,47 @@
+name: 美股机会雷达日报
+
+on:
+  schedule:
+    # Cambodia time UTC+7: Tuesday-Saturday 05:30 = Monday-Friday 22:30 UTC.
+    - cron: "30 22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  daily-scanner:
+    runs-on: ubuntu-latest
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scanner
+        run: python scanner.py
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-scanner-reports
+          path: |
+            reports/*.md
+            reports/*.xlsx
+            reports/history/*.csv
+          if-no-files-found: ignore
