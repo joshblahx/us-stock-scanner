@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pandas as pd
-import requests
 import yfinance as yf
 
 OUTPUT_DIR = Path("reports")
@@ -150,19 +148,6 @@ def build_reports(rows: list[dict]) -> tuple[Path, Path]:
     return excel_path, md_path
 
 
-def send_telegram(excel_path: Path, md_path: Path) -> None:
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        print("Telegram secrets are not configured; skipping notification.")
-        return
-    api_base = f"https://api.telegram.org/bot{token}"
-    text = md_path.read_text(encoding="utf-8")[:3500]
-    requests.post(f"{api_base}/sendMessage", data={"chat_id": chat_id, "text": text}, timeout=30).raise_for_status()
-    with excel_path.open("rb") as fh:
-        requests.post(f"{api_base}/sendDocument", data={"chat_id": chat_id}, files={"document": (excel_path.name, fh)}, timeout=60).raise_for_status()
-
-
 def main() -> None:
     rows = []
     for symbol in fetch_symbols():
@@ -175,7 +160,8 @@ def main() -> None:
     if not rows:
         raise RuntimeError("No valid stock data downloaded.")
     excel_path, md_path = build_reports(rows)
-    send_telegram(excel_path, md_path)
+    print(f"Excel report: {excel_path}")
+    print(f"Markdown report: {md_path}")
 
 
 if __name__ == "__main__":
