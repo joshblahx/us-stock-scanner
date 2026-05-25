@@ -35,6 +35,24 @@ NAME_ZH = {
     "INTC": "英特尔", "SMH": "半导体ETF", "QQQ": "纳指100ETF", "VOO": "标普500ETF",
 }
 
+COLUMN_WIDTHS = {
+    "排名": 8,
+    "代码": 12,
+    "中文名称": 24,
+    "最新收盘价": 14,
+    "总分": 10,
+    "板块": 16,
+    "行业": 28,
+    "5日涨跌幅": 14,
+    "20日涨跌幅": 14,
+    "距52周高点回撤": 20,
+    "成交量/20日均量": 20,
+    "成交量是否放大": 18,
+    "财报日期": 14,
+    "买入逻辑": 46,
+    "风险点": 46,
+}
+
 
 def pct(value: float | None) -> str:
     if value is None or pd.isna(value):
@@ -122,17 +140,25 @@ def format_workbook(writer: pd.ExcelWriter) -> None:
     header_font = Font(color="FFFFFF", bold=True)
     for sheet in writer.book.worksheets:
         sheet.freeze_panes = "A2"
+        sheet.row_dimensions[1].height = 26
         for cell in sheet[1]:
             cell.fill = header_fill
             cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
         for column_cells in sheet.columns:
-            max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
-            width = min(max(max_length + 3, 12), 60)
-            sheet.column_dimensions[get_column_letter(column_cells[0].column)].width = width
+            header = str(column_cells[0].value or "")
+            letter = get_column_letter(column_cells[0].column)
+            fallback_width = max(len(header) + 4, 14)
+            sheet.column_dimensions[letter].width = COLUMN_WIDTHS.get(header, fallback_width)
         for row in sheet.iter_rows(min_row=2):
+            sheet.row_dimensions[row[0].row].height = 34
             for cell in row:
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
+                header = str(sheet.cell(row=1, column=cell.column).value or "")
+                cell.alignment = Alignment(
+                    horizontal="left" if header in {"中文名称", "板块", "行业", "买入逻辑", "风险点"} else "center",
+                    vertical="center",
+                    wrap_text=header in {"买入逻辑", "风险点"},
+                )
 
 
 def build_reports(rows: list[dict]) -> tuple[Path, Path]:
