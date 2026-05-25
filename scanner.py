@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 OUTPUT_DIR = Path("reports")
 FOCUS_SYMBOLS = [
@@ -115,6 +117,24 @@ def latest_metrics(symbol: str) -> dict | None:
     }
 
 
+def format_workbook(writer: pd.ExcelWriter) -> None:
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    header_font = Font(color="FFFFFF", bold=True)
+    for sheet in writer.book.worksheets:
+        sheet.freeze_panes = "A2"
+        for cell in sheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+        for column_cells in sheet.columns:
+            max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
+            width = min(max(max_length + 3, 12), 60)
+            sheet.column_dimensions[get_column_letter(column_cells[0].column)].width = width
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+
 def build_reports(rows: list[dict]) -> tuple[Path, Path]:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUTPUT_DIR / "history").mkdir(parents=True, exist_ok=True)
@@ -127,6 +147,7 @@ def build_reports(rows: list[dict]) -> tuple[Path, Path]:
     with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
         top.to_excel(writer, sheet_name="今日关注前十", index=False)
         df.to_excel(writer, sheet_name="全部排名", index=False)
+        format_workbook(writer)
     lines = [f"# 美股机会雷达日报 - {today}", "", "## 今日最值得关注", ""]
     for _, row in top.iterrows():
         lines += [
