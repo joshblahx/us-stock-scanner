@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import html
+import os
+import smtplib
+from email.message import EmailMessage
+from email.utils import formatdate
 from pathlib import Path
 
 import pandas as pd
@@ -8,6 +13,9 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 OUTPUT_DIR = Path("reports")
+EMAIL_SUBJECT = "今日美股机会雷达"
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 587
 FOCUS_SYMBOLS = [
     "NVDA", "AMD", "AVGO", "TSM", "MU", "MRVL", "PLTR", "ANET", "VRT", "CEG", "CRWD", "MSFT", "META", "GOOGL",
     "AAPL", "AMZN", "TSLA", "COST", "NFLX", "QCOM", "AMAT", "LRCX", "KLAC", "INTC", "SMH", "QQQ", "VOO",
@@ -195,6 +203,87 @@ def build_reports(rows: list[dict]) -> tuple[Path, Path]:
     return excel_path, md_path
 
 
+def markdown_to_html(markdown_text: str) -> str:
+    body: list[str] = []
+    in_list = False
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if in_list:
+                body.append("</ul>")
+                in_list = False
+            continue
+        if line.startswith("### "):
+            if in_list:
+                body.append("</ul>")
+                in_list = False
+            body.append(f"<h3>{html.escape(line[4:])}</h3>")
+        elif line.startswith("## "):
+            if in_list:
+                body.append("</ul>")
+                in_list = False
+            body.append(f"<h2>{html.escape(line[3:])}</h2>")
+        elif line.startswith("# "):
+            if in_list:
+                body.append("</ul>")
+                in_list = False
+            body.append(f"<h1>{html.escape(line[2:])}</h1>")
+        elif line.startswith("- "):
+            if not in_list:
+                body.append("<ul>")
+                in_list = True
+            body.append(f"<li>{html.escape(line[2:])}</li>")
+        else:
+            if in_list:
+                body.append("</ul>")
+                in_list = False
+            body.append(f"<p>{html.escape(line)}</p>")
+    if in_list:
+        body.append("</ul>")
+    template = """
+<!doctype html>
+<html lang="zh-CN">
+  <body style="font-family: Arial, 'Microsoft YaHei', sans-serif; line-height: 1.55; color: #1f2937;">
+    <div style="max-width: 860px; margin: 0 auto;">
+      __BODY__
+      <p style="color: #6b7280; font-size: 13px;">完整 Excel 报告已随邮件附件发送。</p>
+    </div>
+  </body>
+</html>
+"""
+    return template.replace("__BODY__", "\n".join(body))
+
+
+def send_email(markdown_path: Path, excel_path: Path) -> None:
+    email_user = os.getenv("EMAIL_USER")
+    email_pass = os.getenv("EMAIL_PASS")
+    email_to = os.getenv("EMAIL_TO")
+    if not email_user or not email_pass or not email_to:
+        print("Email secrets are not fully configured; skipping email notification.")
+        return
+
+    markdown_text = markdown_path.read_text(encoding="utf-8")
+    message = EmailMessage()
+    message["Subject"] = EMAIL_SUBJECT
+    message["From"] = email_user
+    message["To"] = email_to
+    message["Date"] = formatdate(localtime=True)
+    message.set_content(markdown_text)
+    message.add_alternative(markdown_to_html(markdown_text), subtype="html")
+    message.add_attachment(
+        excel_path.read_bytes(),
+        maintype="application",
+        subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=excel_path.name,
+    )
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60) as smtp:
+        smtp.starttls()
+        smtp.login(email_user, email_pass)
+        smtp.send_message(message)
+    print(f"Email report sent to {email_to}.")
+
+
 def main() -> None:
     rows = []
     for symbol in fetch_symbols():
@@ -209,6 +298,7 @@ def main() -> None:
     excel_path, md_path = build_reports(rows)
     print(f"Excel report: {excel_path}")
     print(f"Markdown report: {md_path}")
+    send_email(md_path, excel_path)
 
 
 if __name__ == "__main__":
